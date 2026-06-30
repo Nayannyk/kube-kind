@@ -1,155 +1,133 @@
-# python-app-docker-demo
-This demo shows two steps:
-+ Install `docker-ce` on Centos 7
-+ Build and run a simple docker image with a python+flask+gunicorn web application.
+# Kube Kind
 
-## Install docker-ce on Centos 7
-Refer to https://docs.docker.com/engine/installation/linux/docker-ce/centos/
-You can also find [other OS installation docs from here](https://docs.docker.com/engine/installation).
+A project containing two components: a **Flask web app** that renders an SVG sketch of the Taj Mahal, and a **kind cluster automation** tool that provisions an AWS EC2 instance and bootstraps a local kind Kubernetes cluster.
 
-#### Uninstall old versions
-```
-$ sudo yum remove docker \
-                  docker-common \
-                  docker-selinux \
-                  docker-engine
-```
+---
 
-#### Install using repository
-```
-sudo yum install -y yum-utils device-mapper-persistent-data lvm2
-sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-sudo yum install docker-ce
-sudo systemctl start docker
-sudo docker run hello-world
-```
-
-Other commands: 
-+ check docker status 
-```
-sudo systemctl status docker.service
-```
-
-+ stop docker 
-```
-sudo systemctl stop docker
-```
-
-+ uninstall docker-ce
-```
-sudo yum remove docker-ce
-```
-
-+ remove all images, container, volumes
-```
-sudo rm -rf /var/lib/docker
-```
-
-## Build/Run a simple python+flask docker web app 
-
-#### Create the Dockerfile
+## Directory Tree
 
 ```
-FROM python:2.7
-
-# Creating Application Source Code Directory
-RUN mkdir -p /usr/src/app
-
-# Setting Home Directory for containers
-WORKDIR /usr/src/app
-
-# Installing python dependencies
-COPY requirements.txt /usr/src/app/
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copying src code to Container
-COPY . /usr/src/app
-
-# Application Environment variables
-#ENV APP_ENV development
-ENV PORT 8080
-
-# Exposing Ports
-EXPOSE $PORT
-
-# Setting Persistent data
-VOLUME ["/app-data"]
-
-# Running Python Application
-CMD gunicorn -b :$PORT -c gunicorn.conf.py main:app
+kube-kind/
+├── python/
+│   ├── kind_cluster_automation.py   # AWS EC2 + kind cluster automation CLI
+│   ├── test_ssh2.py                 # SSH connectivity test
+│   └── test_ssh3.py                 # SSH connectivity test
+├── k8s/                             # Placeholder for Kubernetes manifests
+├── Dockerfile                       # Docker image for the Flask app
+├── gunicorn.conf.py                 # Gunicorn server configuration
+├── main.py                          # Flask application (Taj Mahal SVG)
+├── requirements.txt                 # Python dependencies
+└── README.md                        # This file
 ```
 
-#### Build your image
-Normally, image name convention is something like: `
-{company/application-name}:{version-number}`. In the demo, I just use `{application-name}:{version-number}`
+---
 
-```
-sudo docker build -t my-python-app:1.0.1 .
-```
+## Part 1: Flask Taj Mahal Web App
 
-#### check all docker images
-```
-$ sudo docker images
-REPOSITORY              TAG                 IMAGE ID            CREATED             SIZE
-my-python-app           1.0.1               2b628d11ba3a        22 minutes ago      701.6 MB
-docker.io/python        2.7                 b1d5c2d7dda8        13 days ago         679.3 MB
-docker.io/hello-world   latest              05a3bd381fc2        5 weeks ago         1.84 kB
-```
+A Python Flask application that serves an SVG illustration of the Taj Mahal using Gunicorn as the WSGI server.
 
-`2b628d11ba3a` is the image ID, some commands based on the ID.
+### Prerequisites
 
-+ tag 
-```
-sudo docker tag 2b628d11ba3a my-python-app:1.0.1
-sudo docker tag 2b628d11ba3a my-python-app:latest
-```
+- Python 3.8+
+- pip
+- Docker (optional, for containerized deployment)
 
-+ remove image
-```
-$ sudo docker rmi --force 2b628d11ba3a
-```
+### Setup & Run Locally
 
-#### Run your image
-```
-$ sudo docker run -d -p 8080:8080 my-python-app:1.0.1
+```bash
+# Create virtual environment (recommended)
+python -m venv venv
+.\venv\Scripts\Activate   # Windows
+# source venv/bin/activate  # Linux/macOS
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the Flask dev server
+python main.py
+
+# Or run with Gunicorn (production-style)
+gunicorn --bind :8080 --workers 2 --threads 25 main:app
 ```
 
+Open http://localhost:8080 in your browser.
 
-You can use `sudo docker ps` to list all running containers. 
-```
-$ sudo docker ps
-CONTAINER ID        IMAGE                 COMMAND                  CREATED             STATUS              PORTS                    NAMES
-4de6041072b7        my-python-app:1.0.1   "/bin/sh -c 'gunicorn"   20 minutes ago      Up 20 minutes       0.0.0.0:8080->8080/tcp   elegant_kowalevski
-```
+### Run with Docker
 
-`4de6041072b7` is the running container id. Some commands below are what you might need.
+```bash
+# Build the image
+docker build -t kube-kind-app .
 
-+ display logs in running container
-```
-$ sudo docker logs 4de6041072b7
-[2017-10-23 20:29:49 +0000] [7] [INFO] Starting gunicorn 19.6.0
-[2017-10-23 20:29:49 +0000] [7] [INFO] Listening at: http://0.0.0.0:8080 (7)
-[2017-10-23 20:29:49 +0000] [7] [INFO] Using worker: gthread
-[2017-10-23 20:29:49 +0000] [11] [INFO] Booting worker with pid: 11
-[2017-10-23 20:29:49 +0000] [12] [INFO] Booting worker with pid: 12
-
+# Run the container
+docker run -d -p 8080:8080 kube-kind-app
 ```
 
-+ stop your container
-```
-$ sudo docker stop 4de6041072b7
+### Application Dependencies
+
+| Package   | Version | Purpose              |
+|-----------|---------|----------------------|
+| Flask     | 2.3.3   | Web framework        |
+| gunicorn  | 21.2.0  | WSGI HTTP server     |
+| futures   | 3.0.5   | Thread pool (compat) |
+
+> The Dockerfile strips `futures` via `grep -v` since it is unnecessary on Python 3.
+
+---
+
+## Part 2: Kind Cluster Automation
+
+A CLI tool that automates provisioning an AWS EC2 Ubuntu instance and bootstrapping a kind Kubernetes cluster with 1 control-plane and 2 worker nodes.
+
+### Prerequisites
+
+- AWS CLI installed and configured (`aws configure`)
+- An EC2 key pair (default name: `Nayan`)
+- Python 3.8+
+- SSH client
+
+### Usage
+
+```bash
+cd python
+
+# Create the EC2 instance and kind cluster
+python kind_cluster_automation.py apply
+
+# Use defaults without prompts
+python kind_cluster_automation.py apply -y
+
+# Terminate the EC2 instance and destroy the cluster
+python kind_cluster_automation.py destroy
 ```
 
-+ login inside the container
-```
-$ sudo docker exec -it 4de6041072b7 /bin/sh
-# ls /usr/src/app
-Dockerfile  README.md  gunicorn.conf.py  gunicorn_pid.txt  main.py  main.pyc  requirements.txt
-# exit
+### How It Works
+
+1. **Launch** a `t2.medium` Ubuntu 24.04 EC2 instance (defaults to `ap-south-1`)
+2. **Install** Docker, kind (v0.29.0), and kubectl (latest stable) on the instance
+3. **Create** a kind cluster with a 3-node config (1 control-plane + 2 workers) using `kindest/node:v1.35.1`
+4. **Outputs** the instance ID, public IP, and SSH command for further access
+
+### Configuration Defaults
+
+| Setting              | Default Value                                   |
+|----------------------|-------------------------------------------------|
+| AWS region           | `ap-south-1`                                    |
+| Instance type        | `t2.medium`                                     |
+| Root volume size     | 20 GB (gp3)                                     |
+| Key pair name        | `Nayan`                                         |
+| PEM file path        | `~/Downloads/Nayan.pem`                         |
+| Security group       | `kind-cluster-sg` (ports 22,80,443,3000,3306,5000,9090) |
+| SSH user             | `ubuntu`                                        |
+| Instance name tag    | `kind-instance`                                 |
+
+### SSH Connectivity Tests
+
+Two test scripts are included to verify SSH access to a running instance:
+
+```bash
+cd python
+python test_ssh2.py
+python test_ssh3.py
 ```
 
-#### Test your application
-```
-$ curl http://localhost:8080
-Hello World
-```
+> **Note:** These scripts hardcode the IP `52.66.70.3` — update it to match your instance's public IP.
